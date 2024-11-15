@@ -84,6 +84,7 @@ public:
         }
     }
 
+    // NOTE: cost can not be equal to SIZE_MAX.
     void Start_VogelsApproximation()
     {
         struct DiffCell
