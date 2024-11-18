@@ -4,23 +4,32 @@
 
 int main()
 {
-    // Number of columns is a number of consumers.
-    // Number of rows is a number of producers.
-    // Cells in a last column interpret as a total amount for producer Ai (i = 0, ..., number_of_consumers - 1).
-    // Cells in a last row interpret as a total need for consumer Bi (i = 0, ..., number_of_producers - 1).
-    // Other cells interpret as a cost of transportation from producer Ai to consumer Bi.
-    // Last south-east corner cell is ignored.
-    const std::vector<std::vector<size_t>> initial_table = {
+    const std::vector<std::vector<size_t>> initial_table_0 = {
     //  Nizhniy Novgorod Perm  Krasnodar  Amount 
         {4893,           4280, 6213,      1000}, // Omsk
         {5327,           4296, 6188,       200}, // Novosibirsk
         {6006,           5030, 7224,       600}, // Tomsk
         { 700,            600,  500,         0}  // Needs
     };
+    const std::vector<std::vector<size_t>> initial_table_1 = {
+        {10, 7, 2, 5, 5, 100},
+        {4, 9, 8, 1, 3, 300},
+        {5, 12, 16, 8, 7, 180},
+        {7, 4, 6, 3, 11, 320},
+        {200, 250, 120, 130, 200, 0}
+    };
 
-    auto plan = Plan(initial_table);
+    auto plan = Plan(initial_table_0);
+
+    std::cout << "Vogel's approximation." << std::endl << "================================" << std::endl << std::endl;
 
     plan.Start_VogelsApproximation();
 
-    plan.Print();
+    std::cout << "MODI optimization." << std::endl << "================================" << std::endl << std::endl;
+
+    plan.Optimize_MODI();
+
+    std::cout << "Total cost: " << plan.GetTotalCost();
+
+    return 0;
 }
