@@ -308,6 +308,8 @@ public:
                 }
             }
 
+            this->cycle.clear();
+
             std::cout << "MODI optimization. Iteration " << iteration++ << ":" << std::endl;
             this->Print();
             std::cout << std::endl;
@@ -407,7 +409,7 @@ private:
                 const auto TURN_CELL = std::pair<size_t, size_t>(cell.first, cons);
                 if (CycleVertical(TURN_CELL) == true)
                 {
-                    cycle.push_back(TURN_CELL);
+                    this->cycle.push_back(TURN_CELL);
                     return true;
                 }
             }
@@ -423,7 +425,7 @@ private:
             if (prod == cycle_cell.first && cell.second == cycle_cell.second)
             {
                 const auto TURN_CELL = std::pair<size_t, size_t>(prod, cell.second);
-                cycle.push_back(TURN_CELL);
+                this->cycle.push_back(TURN_CELL);
                 return true;
             }
             else if (prod != cell.first && this->grid[prod][cell.second].amount != 0)
@@ -431,7 +433,7 @@ private:
                 const auto TURN_CELL = std::pair<size_t, size_t>(prod, cell.second);
                 if (CycleHorizontal(TURN_CELL) == true)
                 {
-                    cycle.push_back(TURN_CELL);
+                    this->cycle.push_back(TURN_CELL);
                     return true;
                 }
             }
