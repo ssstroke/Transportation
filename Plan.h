@@ -353,8 +353,352 @@ public:
         }
     }
 
-    // TODO
-    void Optimize_2() {}
+    // NOTE: Not implemented.
+    void Optimize_Delta()
+    {
+        auto delta_grid = std::vector<std::vector<size_t>>(this->producers_count, std::vector<size_t>(this->consumers_count, 0));
+
+        // Step 1.
+        // Find delta_cost across columns (consumers).
+        for (size_t cons = 0; cons < this->consumers_count; ++cons)
+        {
+            size_t min_cost = std::numeric_limits<size_t>().max();
+            for (size_t prod = 0; prod < this->producers_count; ++prod)
+            {
+                if (this->grid[prod][cons].cost < min_cost)
+                {
+                    min_cost = this->grid[prod][cons].cost;
+                }
+            }
+            for (size_t prod = 0; prod < this->producers_count; ++prod)
+            {
+                delta_grid[prod][cons] = this->grid[prod][cons].cost - min_cost;
+            }
+        }
+
+        std::cout << "Did step 1." << std::endl;
+
+        // Step 2.
+        // Find delta_cost across rows (producers).
+        for (size_t prod = 0; prod < this->producers_count; ++prod)
+        {
+            bool has_zero_delta_cost = false;
+            for (size_t cons = 0; cons < this->consumers_count && has_zero_delta_cost == false; ++cons)
+            {
+                if (delta_grid[prod][cons] == 0)
+                {
+                    has_zero_delta_cost = true;
+                }
+            }
+
+            if (has_zero_delta_cost == false)
+            {
+                size_t min_delta_cost = std::numeric_limits<size_t>().max();
+                for (size_t cons = 0; cons < this->consumers_count; ++cons)
+                {
+                    if (delta_grid[prod][cons] < min_delta_cost)
+                    {
+                        min_delta_cost = delta_grid[prod][cons];
+                    }
+                }
+                for (size_t cons = 0; cons < this->consumers_count; ++cons)
+                {
+                    delta_grid[prod][cons] = delta_grid[prod][cons] - min_delta_cost;
+                }
+            }
+        }
+
+        std::cout << "Did step 2." << std::endl;
+
+        // Step 3.
+        // Find columns for which there are 1, 2, 3, ... delta_cost == 0 and
+        // set amount in those to corresponding amount of consumers' needs
+        // (suppliers' amounts are ignored on 1st iteration). Repeat until
+        // all of the consumers' needs are satisfied.
+        size_t delta_cost_iteration = 1;
+        while (std::accumulate(this->consumers_needs.begin(), this->consumers_needs.end(), size_t(0)) != 0)
+        {
+            // Ignore producers' amounts.
+            if (delta_cost_iteration == 1)
+            {
+                for (size_t cons = 0; cons < this->consumers_count; ++cons)
+                {
+                    // Find column with a single delta_cost of zero.
+                    size_t zero_delta_count = 0;
+                    size_t prod_idx = 0;
+                    for (size_t prod = 0; prod < this->producers_count; ++prod)
+                    {
+                        if (delta_grid[prod][cons] == 0)
+                        {
+                            zero_delta_count += 1;
+                            prod_idx = prod;
+                        }
+                    }
+                    if (zero_delta_count == 1)
+                    {
+                        this->grid[prod_idx][cons].amount = this->consumers_needs[cons];
+                        this->consumers_needs[cons] = 0;
+                    }
+                }
+            }
+            // Do not ignore producers' amounts.
+            else
+            {
+                for (size_t cons = 0; cons < this->consumers_count; ++cons)
+                {
+                    size_t zero_delta_count = 0;
+                    for (size_t prod = 0; prod < this->producers_count && zero_delta_count < delta_cost_iteration; ++prod)
+                    {
+                        if (delta_grid[prod][cons] == 0)
+                        {
+                            zero_delta_count += 1;                            
+                        }
+                    }
+                    if (zero_delta_count == delta_cost_iteration)
+                    {
+                        auto sorted_producers_indices = std::vector<size_t>();
+                        sorted_producers_indices.reserve(zero_delta_count);
+                        for (size_t prod = 0; prod < this->producers_count && sorted_producers_indices.size() < zero_delta_count; ++prod)
+                        {
+                            if (delta_grid[prod][cons] == 0)
+                            {
+                                sorted_producers_indices.push_back(prod);
+
+                                // Not sure, but I feel like it is better to sort the array every time new object is pushed.
+                                std::sort(sorted_producers_indices.begin(), sorted_producers_indices.end(), [this](size_t a, size_t b)
+                                    {
+                                        return this->producers_amounts[a] < this->producers_amounts[b];
+                                    });
+                            }
+                        }
+
+                        // Distribute among sorted_producers_indices.
+                        for (size_t i = 0; i < sorted_producers_indices.size() && this->consumers_needs[cons] != 0; ++i)
+                        {
+                            const auto PROD_IDX = sorted_producers_indices[i];
+                            const auto SUPPLY_AMOUNT = std::min(this->producers_amounts[PROD_IDX], this->consumers_needs[cons]);
+                            this->grid[PROD_IDX][cons].amount = SUPPLY_AMOUNT;
+                            this->consumers_needs[cons] -= SUPPLY_AMOUNT;
+                        }
+                    }
+                }
+            }
+            delta_cost_iteration += 1;
+        }
+
+        this->Print();
+        std::cout << "Did step 3." << std::endl;
+
+        // Step 4.
+        // For every producer calculate: producer_amount - sum(supplies by the producer).
+        auto delta_prods = std::vector<int64_t>(this->producers_count);
+        for (size_t prod = 0; prod < this->producers_count; ++prod)
+        {
+            delta_prods[prod] = this->producers_amounts[prod] - std::accumulate(
+                this->grid[prod].begin(),
+                this->grid[prod].end(),
+                0,
+                [](size_t sum, const PlanCell& cell)
+                {
+                    return sum + cell.amount;
+                });
+        }
+
+        std::cout << "Did step 4." << std::endl;
+
+        // If every of delta_prods is 0 than the plan is optimal.
+        // Otherwise proceed with the algorithm.
+        // NOTE: this will probably be replaced with a `while` loop.
+        if (std::all_of(delta_prods.begin(), delta_prods.end(), [](int64_t i)
+            {
+                return i == 0;
+            }) == false)
+        {
+            // Step 5.
+            // Mark columns with non-empty cells in rows where delta_prod < 0.
+            auto marked_consumers_indices = std::vector<size_t>();
+            for (size_t cons = 0; cons < this->consumers_count; ++cons)
+            {
+                for (size_t prod = 0; prod < this->producers_count; ++prod)
+                {
+                    if (this->grid[prod][cons].amount != 0 &&
+                        delta_prods[prod] < 0 && 
+                        std::find(marked_consumers_indices.begin(), marked_consumers_indices.end(), cons) == marked_consumers_indices.end()
+                        )
+                    {
+                        marked_consumers_indices.push_back(cons);
+                        break;
+                    }
+                }
+            }
+
+            std::cout << "Did step 5." << std::endl;
+
+            // Step 6.
+            // Construct vector of min_deltas.
+            auto min_deltas = std::vector<int64_t>(this->producers_count);
+            for (size_t prod = 0; prod < this->producers_count; ++prod)
+            {
+                size_t min_delta = std::numeric_limits<size_t>().max();
+                for (const auto cons : marked_consumers_indices)
+                {
+                    if (delta_grid[prod][cons] < min_delta)
+                    {
+                        min_delta = delta_grid[prod][cons];
+                        min_deltas[prod] = min_delta;
+                    }
+                }
+            }
+
+            std::cout << "Did step 6." << std::endl;
+
+            // Step 7.
+            // Contruct vectors of insufficient and null rows.
+            // NOTE: those are delta_prods for which delta_prods[prod] > 0 and delta_prods[prod] == 0 respectively.
+            auto insufficiend_prods = std::vector<size_t>();
+            auto null_prods = std::vector<size_t>();
+            for (size_t prod = 0; prod < this->producers_count; ++prod)
+            {
+                if (delta_prods[prod] > 0)
+                {
+                    insufficiend_prods.push_back(prod);
+                }
+                else if (delta_prods[prod] == 0)
+                {
+                    null_prods.push_back(prod);
+                }
+            }
+            const auto MIN_INSUFFICIENT_PROD = *std::min(insufficiend_prods.begin(), insufficiend_prods.end());
+
+            std::cout << "Did step 7." << std::endl;
+
+            if (std::all_of(null_prods.begin(), null_prods.end(), [MIN_INSUFFICIENT_PROD](size_t i)
+                {
+                    return MIN_INSUFFICIENT_PROD <= i;
+                }))
+            {
+                // Step 8.
+
+            }
+            else
+            {
+                // Step 9.
+
+            }
+        }
+    }
+
+    void Optimize_Hungarian()
+    {
+        auto cost_matrix = std::vector<std::vector<int64_t>>(this->producers_count, std::vector<int64_t>(this->consumers_count));
+        for (size_t prod = 0; prod < this->producers_count; ++prod)
+        {
+            for (size_t cons = 0; cons < this->consumers_count; ++cons)
+            {
+                cost_matrix[prod][cons] = this->grid[prod][cons].cost;
+            }
+        }
+
+        // Main loop.
+        while (
+            std::any_of(this->producers_amounts.begin(), this->producers_amounts.end(), [](size_t i)
+                {
+                    return i != 0;
+                }) &&
+            std::any_of(this->producers_amounts.begin(), this->producers_amounts.end(), [](size_t i)
+                {
+                    return i != 0;
+                })
+                    )
+        {
+            for (size_t cons = 0; cons < this->consumers_count; ++cons)
+            {
+                size_t column_cost_min = std::numeric_limits<size_t>().max();
+                for (size_t prod = 0; prod < this->producers_count; ++prod)
+                {
+                    if (cost_matrix[prod][cons] < column_cost_min)
+                    {
+                        column_cost_min = cost_matrix[prod][cons];
+                    }
+                }
+                for (size_t prod = 0; prod < this->producers_count; ++prod)
+                {
+                    cost_matrix[prod][cons] -= column_cost_min;
+                }
+            }
+            for (size_t prod = 0; prod < this->producers_count; ++prod)
+            {
+                size_t row_cost_min = std::numeric_limits<size_t>().max();
+                for (size_t cons = 0; cons < this->consumers_count; ++cons)
+                {
+                    if (cost_matrix[prod][cons] < row_cost_min)
+                    {
+                        row_cost_min = cost_matrix[prod][cons];
+                    }
+                }
+                for (size_t cons = 0; cons < this->consumers_count; ++cons)
+                {
+                    cost_matrix[prod][cons] -= row_cost_min;
+                }
+            }
+
+            for (size_t cons = 0; cons < this->consumers_count; ++cons)
+            {
+                for (size_t prod = 0; prod < this->producers_count; ++prod)
+                {
+                    if (cost_matrix[prod][cons] == 0 && this->producers_amounts[prod] != 0 && this->consumers_needs[cons] != 0)
+                    {
+                        const auto SUPPLY_AMOUNT = std::min(this->producers_amounts[prod], this->consumers_needs[cons]);
+                        this->grid[prod][cons].amount = SUPPLY_AMOUNT;
+                        this->producers_amounts[prod] -= SUPPLY_AMOUNT;
+                        this->consumers_needs[cons] -= SUPPLY_AMOUNT;
+                    }
+                }
+            }
+
+            if (
+                std::any_of(this->producers_amounts.begin(), this->producers_amounts.end(), [](size_t i)
+                    {
+                        return i != 0;
+                    }) &&
+                std::any_of(this->producers_amounts.begin(), this->producers_amounts.end(), [](size_t i)
+                    {
+                        return i != 0;
+                    })
+                        )
+            {
+                const size_t MAX_LEFTOVER_PROD_IDX = std::distance(
+                    this->producers_amounts.begin(),
+                    std::max_element(this->producers_amounts.begin(), this->producers_amounts.end())
+                );
+
+                size_t least_cost = std::numeric_limits<size_t>().max();
+                for (size_t cons = 0; cons < this->consumers_count; ++cons)
+                {
+                    if (cost_matrix[MAX_LEFTOVER_PROD_IDX][cons] != 0 && cost_matrix[MAX_LEFTOVER_PROD_IDX][cons] < least_cost)
+                    {
+                        least_cost = cost_matrix[MAX_LEFTOVER_PROD_IDX][cons];
+                    }
+                }
+
+                for (size_t cons = 0; cons < this->consumers_count; ++cons)
+                {
+                    cost_matrix[MAX_LEFTOVER_PROD_IDX][cons] -= least_cost;
+                }
+
+                for (size_t cons = 0; cons < this->consumers_count; ++cons)
+                {
+                    if (cost_matrix[MAX_LEFTOVER_PROD_IDX][cons] < 0)
+                    {
+                        for (size_t prod = 0; prod < this->producers_count; ++prod)
+                        {
+                            cost_matrix[prod][cons] += least_cost;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     void Print()
     {
