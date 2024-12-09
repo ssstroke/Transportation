@@ -55,10 +55,6 @@ int main()
 
     plan.Optimize_MODI();*/
 
-    /*std::cout << "Delta optimization." << std::endl << "================================" << std::endl << std::endl;
-
-    plan.Optimize_Delta();*/
-
     std::cout << "Hungarian optimization." << std::endl << "================================" << std::endl << std::endl;
 
     plan.Optimize_Hungarian();
